@@ -1,5 +1,5 @@
 import { Contact, Conversation, ConversationStatus, Message, MessageType } from '../../domain/models';
-import { ContactRepository, ConversationRepository, CRMService } from '../../domain/ports';
+import { ContactRepository, ConversationRepository, MessageQueueService } from '../../domain/ports';
 import { HandleIncomingMessageUseCase } from '../use-cases/HandleIncomingMessageUseCase';
 
 // Mock implementations for testing
@@ -72,66 +72,51 @@ class MockConversationRepository implements ConversationRepository {
   }
 }
 
-class MockCRMService implements CRMService {
-  private contactCreated = false;
-  private caseCommentAdded = false;
+class MockMessageQueueService implements MessageQueueService {
+  private publishedMessages: unknown[] = [];
 
   async initialize(): Promise<void> {
     // Mock initialization
   }
 
-  async createContact(_contact: Contact): Promise<string> {
-    this.contactCreated = true;
-    return 'sf-contact-123';
+  async publish(_queueName: string, message: unknown): Promise<void> {
+    this.publishedMessages.push(message);
   }
 
-  async updateContact(_salesforceId: string, _contact: Partial<Contact>): Promise<void> {
-    // Mock update
+  async consume(
+    _queueName: string,
+    _handler: (message: unknown) => Promise<void>
+  ): Promise<void> {
+    // Mock consume - not used in these tests
   }
 
-  async findContactByPhone(_phoneNumber: string): Promise<Contact | null> {
-    return null;
+  async close(): Promise<void> {
+    // Mock close
   }
 
-  async createCase(
-    _contactId: string,
-    _subject: string,
-    _description: string
-  ): Promise<string> {
-    return 'sf-case-123';
+  getPublishedMessages(): unknown[] {
+    return this.publishedMessages;
   }
 
-  async updateCase(_caseId: string, _updates: Record<string, unknown>): Promise<void> {
-    // Mock update
-  }
-
-  async addCommentToCase(_caseId: string, _comment: string): Promise<void> {
-    this.caseCommentAdded = true;
-  }
-
-  wasContactCreated(): boolean {
-    return this.contactCreated;
-  }
-
-  wasCaseCommentAdded(): boolean {
-    return this.caseCommentAdded;
+  getPublishedMessageCount(): number {
+    return this.publishedMessages.length;
   }
 }
 
 describe('HandleIncomingMessageUseCase', () => {
   let contactRepository: MockContactRepository;
   let conversationRepository: MockConversationRepository;
-  let crmService: MockCRMService;
+  let messageQueue: MockMessageQueueService;
   let useCase: HandleIncomingMessageUseCase;
 
   beforeEach(() => {
     contactRepository = new MockContactRepository();
     conversationRepository = new MockConversationRepository();
-    crmService = new MockCRMService();
+    messageQueue = new MockMessageQueueService();
     useCase = new HandleIncomingMessageUseCase(
       contactRepository,
       conversationRepository,
-      crmService
+      messageQueue
     );
   });
 
@@ -153,7 +138,7 @@ describe('HandleIncomingMessageUseCase', () => {
       expect(contact?.phoneNumber).toBe('+1234567890');
     });
 
-    it('should sync the new contact with Salesforce', async () => {
+    it('should queue contact creation for Salesforce', async () => {
       const message: Message = {
         id: 'msg-1',
         from: '+1234567890',
@@ -165,7 +150,8 @@ describe('HandleIncomingMessageUseCase', () => {
 
       await useCase.execute(message);
 
-      expect(crmService.wasContactCreated()).toBe(true);
+      // Check that a message was queued
+      expect(messageQueue.getPublishedMessageCount()).toBeGreaterThan(0);
     });
 
     it('should create a new conversation', async () => {
@@ -228,7 +214,7 @@ describe('HandleIncomingMessageUseCase', () => {
       expect(conversation?.messages[0].content).toBe('Another message');
     });
 
-    it('should not create a new contact', async () => {
+    it('should not queue new contact creation', async () => {
       // Setup: Create existing contact
       const existingContact: Contact = {
         id: 'contact-1',
@@ -259,16 +245,16 @@ describe('HandleIncomingMessageUseCase', () => {
         type: MessageType.TEXT,
       };
 
-      const initialContactCreated = crmService.wasContactCreated();
       await useCase.execute(message);
 
-      // Assert: No new contact was created
-      expect(crmService.wasContactCreated()).toBe(initialContactCreated);
+      // Assert: No contact creation was queued (only case comment if case exists)
+      // Since there's no case, no messages should be queued
+      expect(messageQueue.getPublishedMessageCount()).toBe(0);
     });
   });
 
   describe('when conversation has an associated Salesforce case', () => {
-    it('should add a comment to the Salesforce case', async () => {
+    it('should queue a comment for the Salesforce case', async () => {
       // Setup: Create existing contact
       const existingContact: Contact = {
         id: 'contact-1',
@@ -302,8 +288,8 @@ describe('HandleIncomingMessageUseCase', () => {
 
       await useCase.execute(message);
 
-      // Assert: Comment was added to Salesforce case
-      expect(crmService.wasCaseCommentAdded()).toBe(true);
+      // Assert: A message was queued to add comment to Salesforce case
+      expect(messageQueue.getPublishedMessageCount()).toBe(1);
     });
   });
 });
