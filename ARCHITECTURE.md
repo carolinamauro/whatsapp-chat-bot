@@ -11,6 +11,8 @@ This project implements the Hexagonal Architecture pattern (also known as Ports 
 │                         API LAYER                                │
 │  ┌────────────────────────────────────────────────────────┐    │
 │  │              BotService (Orchestrator)                  │    │
+│  │  • Initializes messaging, queue, and services          │    │
+│  │  • Coordinates message flow                            │    │
 │  └────────────────────────────────────────────────────────┘    │
 └────────────┬────────────────────────────────────┬───────────────┘
              │                                    │
@@ -20,14 +22,22 @@ This project implements the Hexagonal Architecture pattern (also known as Ports 
 │  ┌────────────────────────┐  │    │  ┌────────────────────┐  │
 │  │ HandleIncomingMessage  │  │    │  │  WhatsAppAdapter   │  │
 │  │     UseCase            │  │    │  │ (MessagingService) │  │
-│  └────────────────────────┘  │    │  └────────────────────┘  │
-│  ┌────────────────────────┐  │    │  ┌────────────────────┐  │
-│  │   SendMessageUseCase   │  │    │  │ SalesforceAdapter  │  │
-│  └────────────────────────┘  │    │  │   (CRMService)     │  │
-│  ┌────────────────────────┐  │    │  └────────────────────┘  │
-│  │CreateSalesforceCase    │  │    │  ┌────────────────────┐  │
-│  │     UseCase            │  │    │  │   Repositories     │  │
-│  └────────────────────────┘  │    │  │  (InMemory)        │  │
+│  │  • Queues Salesforce   │  │    │  └────────────────────┘  │
+│  │    operations (async)  │  │    │  ┌────────────────────┐  │
+│  └────────────────────────┘  │    │  │ SalesforceAdapter  │  │
+│  ┌────────────────────────┐  │    │  │   (CRMService)     │  │
+│  │   SendMessageUseCase   │  │    │  └────────────────────┘  │
+│  └────────────────────────┘  │    │  ┌────────────────────┐  │
+│  ┌────────────────────────┐  │    │  │  RabbitMQAdapter   │  │
+│  │CreateSalesforceCase    │  │    │  │ (MessageQueue)     │  │
+│  │     UseCase            │  │    │  └────────────────────┘  │
+│  └────────────────────────┘  │    │  ┌────────────────────┐  │
+│                              │    │  │ SalesforceWorker   │  │
+│                              │    │  │ (Background)       │  │
+│                              │    │  └────────────────────┘  │
+│                              │    │  ┌────────────────────┐  │
+│                              │    │  │   Repositories     │  │
+│                              │    │  │  (InMemory)        │  │
 └──────────┬───────────────────┘    │  └────────────────────┘  │
            │                        └──────────┬─────────────────┘
            │                                   │
@@ -40,15 +50,16 @@ This project implements the Hexagonal Architecture pattern (also known as Ports 
 │  │ • Message    │  │ • Messaging   │  │ Pure business    │     │
 │  │ • Contact    │  │   Service     │  │ logic without    │     │
 │  │ • Conversation│ │ • CRM Service │  │ external deps    │     │
+│  │              │  │ • MessageQueue│  │                  │     │
 │  │              │  │ • Repositories│  │                  │     │
 │  └──────────────┘  └──────────────┘  └──────────────────┘     │
 └─────────────────────────────────────────────────────────────────┘
-          ▲                              ▲
-          │                              │
-  ┌───────┴──────────┐         ┌────────┴─────────┐
-  │   WhatsApp API   │         │  Salesforce API  │
-  │  (External)      │         │   (External)     │
-  └──────────────────┘         └──────────────────┘
+          ▲                    ▲                     ▲
+          │                    │                     │
+  ┌───────┴──────────┐ ┌───────┴─────────┐ ┌────────┴────────┐
+  │   WhatsApp API   │ │  Salesforce API │ │   RabbitMQ      │
+  │  (External)      │ │   (External)    │ │   (External)    │
+  └──────────────────┘ └─────────────────┘ └─────────────────┘
 ```
 
 ## Layer Responsibilities
@@ -68,6 +79,7 @@ This project implements the Hexagonal Architecture pattern (also known as Ports 
 - **Ports** (`ports/`): Interfaces that define contracts for external dependencies
   - `MessagingService`: Contract for messaging platforms
   - `CRMService`: Contract for CRM systems
+  - `MessageQueueService`: Contract for message queue systems (RabbitMQ) 🆕
   - `ContactRepository`: Contract for contact storage
   - `ConversationRepository`: Contract for conversation storage
 
@@ -85,7 +97,7 @@ This project implements the Hexagonal Architecture pattern (also known as Ports 
 
 **Components**:
 - **Use Cases** (`use-cases/`):
-  - `HandleIncomingMessageUseCase`: Processes incoming messages, manages contacts and conversations
+  - `HandleIncomingMessageUseCase`: Processes incoming messages, queues Salesforce operations asynchronously 🆕
   - `SendMessageUseCase`: Sends messages through the messaging service
   - `CreateSalesforceCaseUseCase`: Creates Salesforce cases from conversations
 
@@ -105,13 +117,17 @@ This project implements the Hexagonal Architecture pattern (also known as Ports 
 - **Adapters** (`adapters/`):
   - `WhatsAppAdapter`: Implements `MessagingService` using whatsapp-web.js
   - `SalesforceAdapter`: Implements `CRMService` using jsforce
+  - `RabbitMQAdapter`: Implements `MessageQueueService` using amqplib 🆕
+  
+- **Workers** (`workers/`): 🆕
+  - `SalesforceWorker`: Background consumer that processes queued Salesforce operations
   
 - **Repositories** (`repositories/`):
   - `InMemoryContactRepository`: In-memory implementation of `ContactRepository`
   - `InMemoryConversationRepository`: In-memory implementation of `ConversationRepository`
   
 - **Config** (`config/`):
-  - Environment configuration management
+  - Environment configuration management (includes RabbitMQ settings)
 
 **Rules**:
 - ✅ Implements domain ports
@@ -135,7 +151,7 @@ This project implements the Hexagonal Architecture pattern (also known as Ports 
 
 ## Data Flow Examples
 
-### Example 1: Incoming WhatsApp Message
+### Example 1: Incoming WhatsApp Message (with RabbitMQ) 🆕
 
 ```
 1. WhatsApp Message arrives
@@ -150,16 +166,24 @@ This project implements the Hexagonal Architecture pattern (also known as Ports 
    ↓
 6. Use case:
    - Finds/creates Contact (via ContactRepository)
-   - Syncs with Salesforce (via CRMService)
+   - Queues contact creation for Salesforce (via MessageQueueService) ⚡ NON-BLOCKING
    - Finds/creates Conversation (via ConversationRepository)
    - Updates conversation with new message
-   - Updates Salesforce Case if exists
+   - Queues case comment if exists (via MessageQueueService) ⚡ NON-BLOCKING
    ↓
-7. Auto-reply logic executes
+7. Auto-reply logic executes IMMEDIATELY (no waiting for Salesforce!)
    ↓
 8. SendMessageUseCase sends reply (via MessagingService)
    ↓
 9. WhatsAppAdapter sends message via WhatsApp API
+   ↓
+   [PARALLEL BACKGROUND PROCESSING]
+   ↓
+10. SalesforceWorker consumes message from queue
+    ↓
+11. Worker executes Salesforce operation (create contact or add comment)
+    ↓
+12. On failure: Message is requeued automatically for retry
 ```
 
 ### Example 2: Creating Salesforce Case
@@ -206,6 +230,13 @@ This project implements the Hexagonal Architecture pattern (also known as Ports 
 - Business logic doesn't depend on frameworks
 - Can change external systems without touching core logic
 - Framework updates don't affect domain layer
+
+### 5. Asynchronous Processing with RabbitMQ 🆕
+- **Improved User Experience**: Instant responses (< 100ms) instead of 2-5 second waits
+- **Fault Tolerance**: Automatic retries on Salesforce failures
+- **Scalability**: Background workers can scale independently
+- **Reliability**: Durable queues ensure no operations are lost
+- **Decoupling**: Message handling and Salesforce sync are completely independent
 
 ## Design Patterns Used
 

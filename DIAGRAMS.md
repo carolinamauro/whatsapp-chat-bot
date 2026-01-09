@@ -8,31 +8,36 @@
 ┌─────────────────────────────────────────────────────────────┐
 │                       External World                         │
 │                                                              │
-│    ┌─────────────┐                    ┌──────────────┐      │
-│    │  WhatsApp   │                    │  Salesforce  │      │
-│    │   Users     │                    │     CRM      │      │
-│    └──────┬──────┘                    └──────▲───────┘      │
-│           │                                  │              │
-└───────────┼──────────────────────────────────┼──────────────┘
-            │                                  │
-            │ Messages                         │ API Calls
-            │                                  │
-┌───────────▼──────────────────────────────────┼──────────────┐
-│                                              │              │
-│                   Infrastructure Layer        │              │
-│                   (Adapters)                 │              │
-│                                              │              │
-│    ┌──────────────────────┐     ┌───────────▼──────────┐   │
-│    │  WhatsAppAdapter     │     │  SalesforceAdapter   │   │
-│    │ (whatsapp-web.js)    │     │    (jsforce)         │   │
-│    └──────────┬───────────┘     └───────────┬──────────┘   │
-│               │                             │              │
-└───────────────┼─────────────────────────────┼──────────────┘
-                │                             │
-                │ implements                  │ implements
-                │ MessagingService            │ CRMService
-                │                             │
-┌───────────────▼─────────────────────────────▼──────────────┐
+│    ┌─────────────┐         ┌──────────────┐  ┌──────────┐  │
+│    │  WhatsApp   │         │  Salesforce  │  │ RabbitMQ │  │
+│    │   Users     │         │     CRM      │  │  Queue   │  │
+│    └──────┬──────┘         └──────▲───────┘  └────▲─────┘  │
+│           │                       │               │        │
+└───────────┼───────────────────────┼───────────────┼────────┘
+            │                       │               │
+            │ Messages              │ API Calls     │ Messages
+            │                       │               │
+┌───────────▼───────────────────────┼───────────────┼────────┐
+│                                   │               │        │
+│                   Infrastructure Layer            │        │
+│                   (Adapters)                      │        │
+│                                                   │        │
+│    ┌──────────────────────┐     ┌────────────────▼─────┐  │
+│    │  WhatsAppAdapter     │     │  SalesforceAdapter   │  │
+│    │ (whatsapp-web.js)    │     │    (jsforce)         │  │
+│    └──────────┬───────────┘     └──────────────────────┘  │
+│               │                                            │
+│    ┌──────────▼───────────┐     ┌────────────────────────┐│
+│    │  RabbitMQAdapter     │────▶│  SalesforceWorker      ││
+│    │   (amqplib)          │     │  (Background Process)  ││
+│    └──────────────────────┘     └────────────────────────┘│
+│                                                            │
+└───────────────┼────────────────────────────────────────────┘
+                │
+                │ implements
+                │ MessagingService, MessageQueueService
+                │
+┌───────────────▼────────────────────────────────────────────┐
 │                                                             │
 │                      Application Layer                      │
 │                        (Use Cases)                          │
@@ -41,7 +46,7 @@
 │  │        HandleIncomingMessageUseCase                  │  │
 │  │  • Process messages                                  │  │
 │  │  • Create/update contacts                           │  │
-│  │  • Sync with Salesforce                             │  │
+│  │  • Queue Salesforce operations (async) 🆕           │  │
 │  └──────────────────────────────────────────────────────┘  │
 │                                                             │
 │  ┌──────────────────────────────────────────────────────┐  │
@@ -70,48 +75,63 @@
 │  │  • Contact     │    │  • Messaging   │                  │
 │  │  • Conversation│    │    Service     │                  │
 │  │                │    │  • CRM Service │                  │
+│  │                │    │  • MessageQueue│ 🆕               │
 │  │                │    │  • Repositories│                  │
 │  └────────────────┘    └────────────────┘                  │
 │                                                             │
 └─────────────────────────────────────────────────────────────┘
 ```
 
-## Message Flow Sequence
+## Message Flow Sequence (with RabbitMQ) 🆕
 
 ```
-User          WhatsApp      Bot           Use Case        Repository    Salesforce
- │              API       Service         Layer            Layer          API
- │               │           │               │               │             │
- ├──Message──────>│          │               │               │             │
- │               │           │               │               │             │
- │               ├─Receive───>│              │               │             │
- │               │           │               │               │             │
- │               │           ├──Handle───────>│              │             │
- │               │           │               │               │             │
- │               │           │               ├──Find Contact─>│            │
- │               │           │               │               │             │
- │               │           │               │<──Contact─────┤             │
- │               │           │               │  (or null)    │             │
- │               │           │               │               │             │
- │               │           │               ├──Create Contact────────────>│
- │               │           │               │               │             │
- │               │           │               │<──Salesforce ID─────────────┤
- │               │           │               │               │             │
- │               │           │               ├──Save Contact─>│            │
- │               │           │               │               │             │
- │               │           │               ├──Find/Create──>│            │
- │               │           │               │  Conversation │             │
- │               │           │               │               │             │
- │               │           │               ├──Update───────>│            │
- │               │           │               │  Conversation │             │
- │               │           │               │               │             │
- │               │           │<──Complete────┤               │             │
- │               │           │               │               │             │
- │               │<──Send────┤               │               │             │
- │               │  Auto-reply               │               │             │
- │               │           │               │               │             │
- │<──Reply───────┤           │               │               │             │
- │               │           │               │               │             │
+User       WhatsApp   Bot        Use Case     Repository  RabbitMQ   Salesforce
+ │           API     Service      Layer         Layer      Queue      Worker/API
+ │            │         │           │             │          │           │
+ ├─Message────>│        │           │             │          │           │
+ │            │         │           │             │          │           │
+ │            ├─Receive─>│          │             │          │           │
+ │            │         │           │             │          │           │
+ │            │         ├─Handle────>│            │          │           │
+ │            │         │           │             │          │           │
+ │            │         │           ├─Find Contact>│         │           │
+ │            │         │           │             │          │           │
+ │            │         │           │<─Contact────┤          │           │
+ │            │         │           │  (or null)  │          │           │
+ │            │         │           │             │          │           │
+ │            │         │           ├─Queue───────────────────>│         │
+ │            │         │           │ Create                 │           │
+ │            │         │           │ Contact ⚡ NON-BLOCKING│           │
+ │            │         │           │             │          │           │
+ │            │         │           ├─Save Contact>│         │           │
+ │            │         │           │             │          │           │
+ │            │         │           ├─Find/Create─>│         │           │
+ │            │         │           │ Conversation│          │           │
+ │            │         │           │             │          │           │
+ │            │         │           ├─Update──────>│         │           │
+ │            │         │           │ Conversation│          │           │
+ │            │         │           │             │          │           │
+ │            │         │<─Complete─┤             │          │           │
+ │            │         │           │             │          │           │
+ │            │<─Send───┤           │             │          │           │
+ │            │ Instant │           │             │          │           │
+ │            │ Reply!  │           │             │          │           │
+ │<─Reply─────┤         │           │             │          │           │
+ │            │         │           │             │          │           │
+ │                      │           │             │          │           │
+ │            [PARALLEL BACKGROUND PROCESSING]    │          │           │
+ │                      │           │             │          │           │
+ │                      │           │             │      ┌───▼─────┐     │
+ │                      │           │             │      │Consume  │     │
+ │                      │           │             │      │Message  │     │
+ │                      │           │             │      └───┬─────┘     │
+ │                      │           │             │          │           │
+ │                      │           │             │          ├─Process───>│
+ │                      │           │             │          │   Create  │
+ │                      │           │             │          │   Contact │
+ │                      │           │             │          │           │
+ │                      │           │             │          │<─Success──┤
+ │                      │           │             │          │  or Retry │
 ```
 
 ## Directory Structure
@@ -127,19 +147,24 @@ whatsapp-chat-bot/
 │   │   └── ports/           # Interfaces for external dependencies
 │   │       ├── CRMService.ts
 │   │       ├── MessagingService.ts
+│   │       ├── MessageQueueService.ts     # 🆕 RabbitMQ interface
 │   │       ├── ContactRepository.ts
 │   │       └── ConversationRepository.ts
 │   │
 │   ├── application/         # Use cases / Business rules
 │   │   └── use-cases/
-│   │       ├── HandleIncomingMessageUseCase.ts
+│   │       ├── HandleIncomingMessageUseCase.ts    # 🆕 Now queues operations
 │   │       ├── SendMessageUseCase.ts
 │   │       └── CreateSalesforceCaseUseCase.ts
 │   │
 │   ├── infrastructure/      # External dependencies
 │   │   ├── adapters/        # External service implementations
 │   │   │   ├── WhatsAppAdapter.ts
-│   │   │   └── SalesforceAdapter.ts
+│   │   │   ├── SalesforceAdapter.ts
+│   │   │   └── RabbitMQAdapter.ts         # 🆕 Queue implementation
+│   │   │
+│   │   ├── workers/         # 🆕 Background workers
+│   │   │   └── SalesforceWorker.ts        # 🆕 Processes queue messages
 │   │   │
 │   │   ├── repositories/    # Data persistence
 │   │   │   ├── InMemoryContactRepository.ts
