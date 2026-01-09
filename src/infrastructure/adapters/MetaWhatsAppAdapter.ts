@@ -1,4 +1,5 @@
 import express, { Express, Request, Response } from 'express';
+import rateLimit from 'express-rate-limit';
 import axios from 'axios';
 import crypto from 'crypto';
 import { MessagingService } from '../../domain/ports';
@@ -21,6 +22,7 @@ export class MetaWhatsAppAdapter implements MessagingService {
   constructor() {
     this.app = express();
     this.app.use(express.json());
+    this.setupRateLimiting();
     this.setupWebhookRoutes();
   }
 
@@ -85,6 +87,24 @@ export class MetaWhatsAppAdapter implements MessagingService {
 
   isReady(): boolean {
     return this.ready;
+  }
+
+  /**
+   * Setup rate limiting for webhook endpoints
+   * Protects against abuse and DoS attacks
+   */
+  private setupRateLimiting(): void {
+    // Rate limiter for webhook endpoints
+    const webhookLimiter = rateLimit({
+      windowMs: 1 * 60 * 1000, // 1 minute
+      max: 100, // Limit each IP to 100 requests per minute
+      message: 'Too many requests from this IP, please try again later.',
+      standardHeaders: true, // Return rate limit info in the `RateLimit-*` headers
+      legacyHeaders: false, // Disable the `X-RateLimit-*` headers
+    });
+
+    // Apply rate limiting to webhook path
+    this.app.use(config.meta.webhookPath, webhookLimiter);
   }
 
   /**
