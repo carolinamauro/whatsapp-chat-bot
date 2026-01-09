@@ -31,13 +31,15 @@ src/
 
 - ✅ WhatsApp integration using whatsapp-web.js
 - ✅ Salesforce CRM integration using jsforce
-- ✅ Automatic contact synchronization with Salesforce
+- ✅ **RabbitMQ for asynchronous Salesforce operations** 🆕
+- ✅ Automatic contact synchronization with Salesforce (async)
 - ✅ Conversation tracking and management
 - ✅ Salesforce Case creation from conversations
 - ✅ Auto-reply functionality
 - ✅ Clean hexagonal architecture
 - ✅ TypeScript for type safety
 - ✅ Environment-based configuration
+- ✅ Improved user experience with non-blocking operations
 
 ## 📋 Prerequisites
 
@@ -45,6 +47,7 @@ src/
 - npm or yarn
 - Salesforce account with API access
 - WhatsApp account for the bot
+- **RabbitMQ server** (local or cloud instance) 🆕
 
 ## 🔧 Installation
 
@@ -64,14 +67,26 @@ npm install
 cp .env.example .env
 ```
 
-4. Edit `.env` file with your Salesforce credentials:
+4. Edit `.env` file with your Salesforce and RabbitMQ credentials:
 ```env
 SALESFORCE_USERNAME=your-salesforce-username
 SALESFORCE_PASSWORD=your-salesforce-password
 SALESFORCE_SECURITY_TOKEN=your-security-token
 SALESFORCE_LOGIN_URL=https://login.salesforce.com
+
+RABBITMQ_URL=amqp://localhost:5672
+RABBITMQ_QUEUE_NAME=salesforce-operations
+
 BOT_NAME=WhatsApp Bot
 BOT_WELCOME_MESSAGE=Hello! I'm your Salesforce assistant. How can I help you today?
+```
+
+5. Start RabbitMQ (if running locally):
+```bash
+# Using Docker
+docker run -d --name rabbitmq -p 5672:5672 -p 15672:15672 rabbitmq:3-management
+
+# Or install locally from https://www.rabbitmq.com/download.html
 ```
 
 ## 🏃 Running the Bot
@@ -105,23 +120,34 @@ npm run format
 
 ## 🔌 How It Works
 
-### Message Flow
+### Message Flow with RabbitMQ
 
 1. **User sends a WhatsApp message** → WhatsApp adapter receives it
 2. **Message is converted** to domain model
 3. **HandleIncomingMessageUseCase** processes the message:
    - Finds or creates contact in local repository
-   - Syncs contact with Salesforce (creates Contact in Salesforce if new)
+   - **Queues** contact creation for Salesforce (non-blocking) 🆕
    - Finds or creates conversation
    - Adds message to conversation
-   - Updates Salesforce Case if one exists
-4. **Auto-reply logic** sends response if needed
+   - **Queues** case comment for Salesforce if case exists (non-blocking) 🆕
+4. **Auto-reply logic** sends response immediately
+5. **Salesforce Worker** (background process) processes queued operations:
+   - Creates contacts in Salesforce
+   - Adds comments to cases
+   - Automatically retries on failure
+
+### Benefits of Async Processing
+
+- 🚀 **Instant Response**: Users get immediate replies without waiting for Salesforce
+- 🔄 **Fault Tolerance**: Operations automatically retry if Salesforce is slow or unavailable
+- 📈 **Scalability**: Worker can be scaled independently
+- 🛡️ **Reliability**: Durable queues ensure no operations are lost
 
 ### Salesforce Integration
 
-- **Contacts**: Automatically created in Salesforce when a new user messages the bot
+- **Contacts**: Automatically created in Salesforce when a new user messages the bot (async)
 - **Cases**: Can be created from conversations for customer support
-- **Comments**: Messages are added as comments to related Salesforce Cases
+- **Comments**: Messages are added as comments to related Salesforce Cases (async)
 
 ## 🧪 Testing
 
@@ -222,6 +248,18 @@ MIT License - see LICENSE file for details
 - Verify your credentials in `.env`
 - Make sure to append security token to password
 - Check if your IP is whitelisted in Salesforce
+
+### RabbitMQ connection fails 🆕
+- Ensure RabbitMQ is running (`docker ps` or check service status)
+- Verify RABBITMQ_URL in `.env` matches your RabbitMQ instance
+- Check RabbitMQ logs for connection issues
+- Default port 5672 should be accessible
+
+### Messages not syncing to Salesforce 🆕
+- Check Salesforce worker logs for errors
+- Verify queue has messages: RabbitMQ Management UI (http://localhost:15672)
+- Ensure Salesforce credentials are valid
+- Operations will retry automatically on failure
 
 ### WhatsApp disconnects frequently
 - This might be due to WhatsApp's security policies
