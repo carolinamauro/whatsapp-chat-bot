@@ -1,0 +1,56 @@
+name: Deploy to Test Environment
+
+on:
+  push:
+    branches:
+      - test
+
+env:
+  NODE_VERSION: '18'
+
+jobs:
+  test:
+    name: Run Tests
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+      
+      - name: Install dependencies
+        run: npm ci
+        env:
+          PUPPETEER_SKIP_DOWNLOAD: 'true'
+      
+      - name: Run linter
+        run: npm run lint
+      
+      - name: Build project
+        run: npm run build
+      
+      - name: Run tests
+        run: npm test
+
+  deploy-test:
+    name: Deploy to Test (Render)
+    needs: test
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Trigger Render Deploy (Test)
+        run: |
+          curl -X POST "${{ secrets.RENDER_DEPLOY_HOOK_TEST }}"
+      
+      - name: Wait for deployment
+        run: sleep 30
+      
+      - name: Deployment complete
+        run: |
+          echo "✅ Deployed to Test environment"
+          echo "🔗 URL: ${{ secrets.RENDER_TEST_URL }}"

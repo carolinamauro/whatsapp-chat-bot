@@ -1,0 +1,77 @@
+name: CI - Continuous Integration
+
+on:
+  pull_request:
+    branches:
+      - main
+      - test
+  push:
+    branches:
+      - main
+
+env:
+  NODE_VERSION: '18'
+
+jobs:
+  lint-and-test:
+    name: Lint and Test
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+      
+      - name: Install dependencies
+        run: npm ci
+        env:
+          PUPPETEER_SKIP_DOWNLOAD: 'true'
+      
+      - name: Run ESLint
+        run: npm run lint
+      
+      - name: Run Prettier check
+        run: npm run format -- --check || true
+      
+      - name: TypeScript Build
+        run: npm run build
+      
+      - name: Run tests
+        run: npm test
+      
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v3
+        with:
+          name: dist
+          path: dist/
+          retention-days: 7
+
+  security-scan:
+    name: Security Scan
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+      
+      - name: Install dependencies
+        run: npm ci
+        env:
+          PUPPETEER_SKIP_DOWNLOAD: 'true'
+      
+      - name: Run npm audit
+        run: npm audit --audit-level=moderate || true
+      
+      - name: Check for outdated dependencies
+        run: npm outdated || true
