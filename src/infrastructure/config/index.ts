@@ -20,6 +20,17 @@ export const config = {
     name: process.env.BOT_NAME || 'WhatsApp Bot',
     welcomeMessage: process.env.BOT_WELCOME_MESSAGE || 'Hello! How can I help you?',
   },
+  whatsapp: {
+    adapter: process.env.WHATSAPP_ADAPTER || 'whatsapp-web', // 'whatsapp-web' or 'meta-api'
+  },
+  meta: {
+    accessToken: process.env.META_ACCESS_TOKEN || '',
+    phoneNumberId: process.env.META_PHONE_NUMBER_ID || '',
+    verifyToken: process.env.META_VERIFY_TOKEN || '',
+    appSecret: process.env.META_APP_SECRET || '',
+    webhookPort: parseInt(process.env.META_WEBHOOK_PORT || '3000', 10),
+    webhookPath: process.env.META_WEBHOOK_PATH || '/webhook',
+  },
   environment: process.env.NODE_ENV || 'development',
 };
 
@@ -37,5 +48,24 @@ export function validateConfig(): void {
       `Missing required environment variables: ${missing.join(', ')}\n` +
       'Please copy .env.example to .env and fill in the values.'
     );
+  }
+
+  // Validate Meta API configuration if using meta-api adapter
+  if (config.whatsapp.adapter === 'meta-api') {
+    const metaRequiredFields = [
+      'META_ACCESS_TOKEN',
+      'META_PHONE_NUMBER_ID',
+      'META_VERIFY_TOKEN',
+      'META_APP_SECRET',
+    ];
+
+    const metaMissing = metaRequiredFields.filter((field) => !process.env[field]);
+
+    if (metaMissing.length > 0) {
+      throw new Error(
+        `Missing required Meta API environment variables: ${metaMissing.join(', ')}\n` +
+        'Please add Meta API credentials to your .env file when using WHATSAPP_ADAPTER=meta-api.'
+      );
+    }
   }
 }
