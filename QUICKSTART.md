@@ -9,8 +9,10 @@ Before you begin, ensure you have:
 - ✅ Node.js 18 or higher installed
 - ✅ npm or yarn package manager
 - ✅ A Salesforce account with API access
-- ✅ A WhatsApp account (for the bot)
-- ✅ **RabbitMQ server** (Docker recommended) 🆕
+- ✅ **RabbitMQ server** (Docker recommended)
+- ✅ **Choose ONE** WhatsApp option:
+  - **Option A**: Meta Business Account (for production) 🆕
+  - **Option B**: WhatsApp account for QR scanning (for development)
 
 ## Step 1: Clone and Install
 
@@ -50,9 +52,50 @@ cp .env.example .env
 nano .env  # or vim, code, etc.
 ```
 
-Update the `.env` file with your Salesforce and RabbitMQ credentials:
+### Choose Your WhatsApp Adapter
+
+#### Option A: Meta Business API (Production) 🆕
+
+For production deployments with official Meta API support:
 
 ```env
+# WhatsApp Adapter Selection
+WHATSAPP_ADAPTER=meta-api
+
+# Salesforce Configuration
+SALESFORCE_USERNAME=your-email@company.com
+SALESFORCE_PASSWORD=yourPassword
+SALESFORCE_SECURITY_TOKEN=yourSecurityToken
+SALESFORCE_LOGIN_URL=https://login.salesforce.com
+
+# Meta Business API Configuration
+META_ACCESS_TOKEN=your-permanent-access-token
+META_PHONE_NUMBER_ID=your-phone-number-id
+META_VERIFY_TOKEN=your-custom-verify-token
+META_APP_SECRET=your-app-secret
+META_WEBHOOK_PORT=3000
+META_WEBHOOK_PATH=/webhook
+
+RABBITMQ_URL=amqp://localhost:5672
+RABBITMQ_QUEUE_NAME=salesforce-operations
+
+BOT_NAME=My WhatsApp Bot
+BOT_WELCOME_MESSAGE=Hi! I'm here to help. How can I assist you today?
+```
+
+📖 **For Meta API setup**, see detailed instructions in [DEPLOYMENT.md](DEPLOYMENT.md)
+
+💡 **Testing Meta API**: Run `npm run test:meta` to validate your configuration
+
+#### Option B: WhatsApp Web (Development)
+
+For quick testing and development:
+
+```env
+# WhatsApp Adapter Selection
+WHATSAPP_ADAPTER=whatsapp-web
+
+# Salesforce Configuration
 SALESFORCE_USERNAME=your-email@company.com
 SALESFORCE_PASSWORD=yourPassword
 SALESFORCE_SECURITY_TOKEN=yourSecurityToken
@@ -97,12 +140,24 @@ Starting Salesforce worker...
 ✓ Salesforce worker started and listening for operations
 ```
 
-## Step 6: Scan QR Code
+## Step 6: Connect WhatsApp
+
+### For WhatsApp Web (Option B):
 
 1. A QR code will appear in your terminal
 2. Open WhatsApp on your phone
 3. Go to: **Settings → Linked Devices → Link a Device**
 4. Scan the QR code from your terminal
+
+### For Meta Business API (Option A):
+
+1. Ensure your webhook is accessible via HTTPS
+   - For local testing: Use ngrok - `ngrok http 3000`
+   - For production: Use proper SSL certificate (see DEPLOYMENT.md)
+2. Configure webhook in Meta Developer Console with your HTTPS URL
+3. Bot is ready when webhook server starts
+
+💡 **Local testing with Meta API**: Run `ngrok http 3000` in another terminal, then use the ngrok URL in Meta webhook configuration.
 
 ## Step 7: Wait for Connection
 

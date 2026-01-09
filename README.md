@@ -29,12 +29,16 @@ src/
 
 ## 🚀 Features
 
-- ✅ WhatsApp integration using whatsapp-web.js
+- ✅ **Dual WhatsApp Integration Options**:
+  - **Meta Business API** (Production-ready, official API) 🆕
+  - **WhatsApp Web** (Development-friendly, QR code based)
 - ✅ Salesforce CRM integration using jsforce
-- ✅ **RabbitMQ for asynchronous Salesforce operations** 🆕
+- ✅ **RabbitMQ for asynchronous Salesforce operations**
 - ✅ Automatic contact synchronization with Salesforce (async)
 - ✅ Conversation tracking and management
 - ✅ Salesforce Case creation from conversations
+- ✅ Webhook endpoint for Meta Business API 🆕
+- ✅ Secure webhook signature verification 🆕
 - ✅ Auto-reply functionality
 - ✅ Clean hexagonal architecture
 - ✅ TypeScript for type safety
@@ -46,8 +50,10 @@ src/
 - Node.js 18+ 
 - npm or yarn
 - Salesforce account with API access
-- WhatsApp account for the bot
-- **RabbitMQ server** (local or cloud instance) 🆕
+- **RabbitMQ server** (local or cloud instance)
+- **Choose ONE of the following**:
+  - **Option A (Production)**: Meta Business Account with WhatsApp Business API access 🆕
+  - **Option B (Development)**: WhatsApp account for QR code scanning
 
 ## 🔧 Installation
 
@@ -67,8 +73,42 @@ npm install
 cp .env.example .env
 ```
 
-4. Edit `.env` file with your Salesforce and RabbitMQ credentials:
+4. Edit `.env` file with your credentials:
+
+**Choose your WhatsApp adapter:**
+
+### Option A: Meta Business API (Production)
 ```env
+WHATSAPP_ADAPTER=meta-api
+
+# Meta Business API Configuration
+META_ACCESS_TOKEN=your-meta-access-token
+META_PHONE_NUMBER_ID=your-phone-number-id
+META_VERIFY_TOKEN=your-webhook-verify-token
+META_APP_SECRET=your-app-secret
+META_WEBHOOK_PORT=3000
+META_WEBHOOK_PATH=/webhook
+
+# Salesforce and RabbitMQ (same for both options)
+SALESFORCE_USERNAME=your-salesforce-username
+SALESFORCE_PASSWORD=your-salesforce-password
+SALESFORCE_SECURITY_TOKEN=your-security-token
+SALESFORCE_LOGIN_URL=https://login.salesforce.com
+
+RABBITMQ_URL=amqp://localhost:5672
+RABBITMQ_QUEUE_NAME=salesforce-operations
+
+BOT_NAME=WhatsApp Bot
+BOT_WELCOME_MESSAGE=Hello! I'm your Salesforce assistant. How can I help you today?
+```
+
+**📖 See [DEPLOYMENT.md](DEPLOYMENT.md) for detailed Meta API setup instructions**
+
+### Option B: WhatsApp Web (Development)
+```env
+WHATSAPP_ADAPTER=whatsapp-web
+
+# Salesforce and RabbitMQ
 SALESFORCE_USERNAME=your-salesforce-username
 SALESFORCE_PASSWORD=your-salesforce-password
 SALESFORCE_SECURITY_TOKEN=your-security-token
@@ -110,6 +150,8 @@ npm run format
 
 ## 📱 First Time Setup
 
+### For WhatsApp Web (Option B)
+
 1. Run the bot: `npm run dev`
 2. Scan the QR code with your WhatsApp app:
    - Open WhatsApp on your phone
@@ -117,6 +159,21 @@ npm run format
    - Scan the QR code displayed in the terminal
 3. Wait for the bot to connect
 4. Send a test message to the bot's WhatsApp number
+
+### For Meta Business API (Option A)
+
+1. Complete the Meta API setup (see [DEPLOYMENT.md](DEPLOYMENT.md))
+2. Configure webhook endpoint with HTTPS (use ngrok for local testing)
+3. Run the bot: `npm run dev` or `npm start`
+4. Bot will start webhook server on configured port
+5. Configure webhook URL in Meta Developer Console
+6. Send a test message to your WhatsApp Business number
+
+**💡 Tip**: For local development with Meta API, use [ngrok](https://ngrok.com) to create an HTTPS tunnel:
+```bash
+ngrok http 3000
+```
+Then use the ngrok HTTPS URL in your Meta webhook configuration.
 
 ## 🔌 How It Works
 
