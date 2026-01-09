@@ -5,6 +5,7 @@
   "main": "dist/index.js",
   "scripts": {
     "build": "tsc",
+    "postinstall": "npx puppeteer install",
     "start": "node dist/index.js",
     "dev": "ts-node src/index.ts",
     "lint": "eslint . --ext .ts",
