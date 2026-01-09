@@ -12,6 +12,10 @@ export const config = {
     securityToken: process.env.SALESFORCE_SECURITY_TOKEN || '',
     loginUrl: process.env.SALESFORCE_LOGIN_URL || 'https://login.salesforce.com',
   },
+  rabbitmq: {
+    url: process.env.RABBITMQ_URL || 'amqp://localhost:5672',
+    queueName: process.env.RABBITMQ_QUEUE_NAME || 'salesforce-operations',
+  },
   bot: {
     name: process.env.BOT_NAME || 'WhatsApp Bot',
     welcomeMessage: process.env.BOT_WELCOME_MESSAGE || 'Hello! How can I help you?',

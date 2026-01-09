@@ -1,5 +1,5 @@
 import { Message } from '../domain/models';
-import { MessagingService, CRMService } from '../domain/ports';
+import { MessagingService, MessageQueueService } from '../domain/ports';
 import { HandleIncomingMessageUseCase } from '../application/use-cases/HandleIncomingMessageUseCase';
 import { SendMessageUseCase } from '../application/use-cases/SendMessageUseCase';
 import { InMemoryContactRepository } from '../infrastructure/repositories/InMemoryContactRepository';
@@ -16,7 +16,7 @@ export class BotService {
 
   constructor(
     private messagingService: MessagingService,
-    private crmService: CRMService
+    private messageQueue: MessageQueueService
   ) {
     const contactRepository = new InMemoryContactRepository();
     const conversationRepository = new InMemoryConversationRepository();
@@ -24,7 +24,7 @@ export class BotService {
     this.handleIncomingMessageUseCase = new HandleIncomingMessageUseCase(
       contactRepository,
       conversationRepository,
-      crmService
+      messageQueue
     );
 
     this.sendMessageUseCase = new SendMessageUseCase(messagingService);
@@ -39,9 +39,9 @@ export class BotService {
     await this.messagingService.initialize();
     console.log('✓ Messaging service initialized');
 
-    // Initialize CRM service (Salesforce)
-    await this.crmService.initialize();
-    console.log('✓ CRM service initialized');
+    // Initialize message queue (RabbitMQ)
+    await this.messageQueue.initialize();
+    console.log('✓ Message queue initialized');
 
     console.log(`\n${config.bot.name} is ready!`);
   }

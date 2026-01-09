@@ -1,6 +1,7 @@
-import { WhatsAppAdapter, SalesforceAdapter } from './infrastructure/adapters';
+import { WhatsAppAdapter, SalesforceAdapter, RabbitMQAdapter } from './infrastructure/adapters';
 import { BotService } from './api';
-import { validateConfig } from './infrastructure/config';
+import { SalesforceWorker } from './infrastructure/workers';
+import { validateConfig, config } from './infrastructure/config';
 
 /**
  * Main Application Entry Point
@@ -8,7 +9,7 @@ import { validateConfig } from './infrastructure/config';
  */
 async function main() {
   try {
-    console.log('🚀 Starting WhatsApp Salesforce Chatbot...\n');
+    console.log('🚀 Starting WhatsApp Salesforce Chatbot with RabbitMQ...\n');
 
     // Validate configuration
     validateConfig();
@@ -17,19 +18,29 @@ async function main() {
     // Initialize adapters (infrastructure layer)
     const whatsAppAdapter = new WhatsAppAdapter();
     const salesforceAdapter = new SalesforceAdapter();
+    const rabbitMQAdapter = new RabbitMQAdapter(config.rabbitmq.url);
+
+    // Initialize message queue
+    await rabbitMQAdapter.initialize();
+
+    // Initialize and start Salesforce worker (background process)
+    const salesforceWorker = new SalesforceWorker(rabbitMQAdapter, salesforceAdapter);
+    await salesforceWorker.start();
 
     // Initialize bot service (API layer)
-    const botService = new BotService(whatsAppAdapter, salesforceAdapter);
+    const botService = new BotService(whatsAppAdapter, rabbitMQAdapter);
 
     // Start the bot
     await botService.initialize();
 
     console.log('\n📱 Bot is now listening for messages...');
+    console.log('🔄 Salesforce worker is processing operations asynchronously');
     console.log('Press Ctrl+C to stop the bot\n');
 
     // Keep the process running
-    process.on('SIGINT', () => {
+    process.on('SIGINT', async () => {
       console.log('\n\n👋 Shutting down bot...');
+      await rabbitMQAdapter.close();
       process.exit(0);
     });
 

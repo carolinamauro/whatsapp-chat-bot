@@ -1,5 +1,13 @@
 import { Message, Contact, Conversation, ConversationStatus } from '../../domain/models';
-import { ContactRepository, ConversationRepository, CRMService } from '../../domain/ports';
+import {
+  ContactRepository,
+  ConversationRepository,
+  MessageQueueService,
+  SalesforceOperationType,
+  CreateContactOperation,
+  AddCommentToCaseOperation,
+} from '../../domain/ports';
+import { config } from '../../infrastructure/config';
 
 /**
  * Use Case: Handle Incoming Message
@@ -9,7 +17,7 @@ export class HandleIncomingMessageUseCase {
   constructor(
     private contactRepository: ContactRepository,
     private conversationRepository: ConversationRepository,
-    private crmService: CRMService
+    private messageQueue: MessageQueueService
   ) {}
 
   async execute(message: Message): Promise<void> {
@@ -32,9 +40,9 @@ export class HandleIncomingMessageUseCase {
     conversation.lastMessageAt = message.timestamp;
     await this.conversationRepository.update(conversation);
 
-    // Sync with Salesforce if case exists
+    // Queue Salesforce operation if case exists (non-blocking)
     if (conversation.salesforceCaseId) {
-      await this.crmService.addCommentToCase(
+      await this.queueAddCommentToCase(
         conversation.salesforceCaseId,
         `Message from ${contact.phoneNumber}: ${message.content}`
       );
@@ -51,14 +59,8 @@ export class HandleIncomingMessageUseCase {
     // Save to local repository
     const savedContact = await this.contactRepository.save(newContact);
 
-    // Sync with Salesforce
-    try {
-      const salesforceId = await this.crmService.createContact(savedContact);
-      savedContact.salesforceId = salesforceId;
-      await this.contactRepository.update(savedContact);
-    } catch (error) {
-      console.error('Failed to sync contact with Salesforce:', error);
-    }
+    // Queue Salesforce operation (non-blocking)
+    await this.queueCreateContact(savedContact);
 
     return savedContact;
   }
@@ -74,6 +76,43 @@ export class HandleIncomingMessageUseCase {
     };
 
     return this.conversationRepository.save(newConversation);
+  }
+
+  private async queueCreateContact(contact: Contact): Promise<void> {
+    try {
+      const operation: CreateContactOperation = {
+        type: SalesforceOperationType.CREATE_CONTACT,
+        timestamp: new Date(),
+        contact: {
+          id: contact.id,
+          phoneNumber: contact.phoneNumber,
+          name: contact.name,
+        },
+      };
+
+      await this.messageQueue.publish(config.rabbitmq.queueName, operation);
+      console.log(`✓ Queued contact creation for Salesforce: ${contact.phoneNumber}`);
+    } catch (error) {
+      console.error('Failed to queue contact creation:', error);
+      // Non-blocking: We don't throw the error to prevent message processing failure
+    }
+  }
+
+  private async queueAddCommentToCase(caseId: string, comment: string): Promise<void> {
+    try {
+      const operation: AddCommentToCaseOperation = {
+        type: SalesforceOperationType.ADD_COMMENT_TO_CASE,
+        timestamp: new Date(),
+        caseId,
+        comment,
+      };
+
+      await this.messageQueue.publish(config.rabbitmq.queueName, operation);
+      console.log(`✓ Queued comment for Salesforce case: ${caseId}`);
+    } catch (error) {
+      console.error('Failed to queue case comment:', error);
+      // Non-blocking: We don't throw the error to prevent message processing failure
+    }
   }
 
   private generateId(): string {
